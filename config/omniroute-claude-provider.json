@@ -1,0 +1,39 @@
+{
+  "providerNode": {
+    "id": "anthropic-compatible-8d58944c-8afc-4f4a-8d57-270514ef806f",
+    "type": "anthropic-compatible",
+    "name": "claude",
+    "prefix": "claude",
+    "baseUrl": "https://claude-code-cli.vibecode-claude.online"
+  },
+  "connection": {
+    "id": "ca21d51a-9a34-4dfd-a60f-995c0b57ea6a",
+    "name": "claude",
+    "apiKey": "<CLAUDE_API_KEY>",
+    "providerSpecificData": {
+      "prefix": "claude",
+      "baseUrl": "https://claude-code-cli.vibecode-claude.online",
+      "nodeName": "claude",
+      "autoSync": false,
+      "customUserAgent": "claude-cli/2.1.173 (external; fallback)"
+    }
+  },
+  "models": [
+    "claude/claude-opus-4-8",
+    "claude/claude-opus-4-7",
+    "claude/claude-opus-4-6",
+    "claude/claude-opus-4-5",
+    "claude/claude-sonnet-4-6",
+    "claude/claude-sonnet-4-5",
+    "claude/claude-haiku-4-5",
+    "claude/claude-fable-5"
+  ],
+  "notes": {
+    "source": "https://telegra.ph/Claude-Code-CLI-Api-20-05-27",
+    "baseUrlRule": "Do NOT append /v1 to ANTHROPIC_BASE_URL",
+    "authHeader": "X-Api-Key (not Bearer)",
+    "omnirouteProxyLimitation": "vibecode-claude API blocks OmniRoute HTTP client (Cloudflare 403). Claude Code CLI works directly with the key.",
+    "claudeCliDirectTest": "OK — claude -p works with env ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY",
+    "balanceEndpoint": "GET https://claude-code-cli.vibecode-claude.online/v1/usage -H X-Api-Key: <key>"
+  }
+}

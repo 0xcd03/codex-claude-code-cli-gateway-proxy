@@ -1,0 +1,112 @@
+services:
+  omniroute:
+    image: diegosouzapw/omniroute:3.8.23
+    container_name: omniroute
+    restart: unless-stopped
+    stop_grace_period: 40s
+    # Run as root: Docker secrets, /root/.claude mounts, and /app/data permissions.
+    user: "0:0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "20128:20128"
+      - "20129:20129"
+    volumes:
+      - /opt/omniroute/data:/app/data
+      # Persist Claude CLI state across container restarts.
+      - /opt/omniroute/claude-home/claude-identity.json:/root/.claude.json
+      - /opt/omniroute/claude-home:/root/.claude
+      - /opt/claude-gateway/server.js:/app/claude-gateway.mjs:ro
+      - /opt/claude-gateway/claude-bridge.mjs:/app/claude-bridge.mjs:ro
+      - /opt/claude-gateway/tool-mapping.mjs:/app/tool-mapping.mjs:ro
+      - /opt/claude-gateway/codex-gateway.mjs:/app/codex-gateway.mjs:ro
+      - /opt/claude-gateway/codex-sanitize.mjs:/app/codex-sanitize.mjs:ro
+      - /opt/claude-gateway/codex-app-server-client.mjs:/app/codex-app-server-client.mjs:ro
+      - /opt/claude-gateway/openai-codex-bridge.mjs:/app/openai-codex-bridge.mjs:ro
+      - /opt/omniroute/codex-home:/opt/omniroute/codex-home
+    env_file:
+      - /opt/omniroute/omniroute.env
+    environment:
+      AUTH_COOKIE_SECURE: "false"
+      ALLOW_API_KEY_REVEAL: "false"
+      DASHBOARD_PORT: "20128"
+      API_HOST: "0.0.0.0"
+      MACHINE_ID_SALT: endpoint-proxy-salt
+      DISABLE_SQLITE_AUTO_BACKUP: "false"
+      PROVIDER_LIMITS_SYNC_INTERVAL_MINUTES: "70"
+      CLOUD_URL: ""
+      NODE_ENV: production
+      API_PORT: "20129"
+      NODE_OPTIONS: --max-old-space-size=256
+      REQUIRE_API_KEY: "false"
+      DATA_DIR: /app/data
+      NEXT_PUBLIC_ENABLE_SOCKS5_PROXY: "true"
+      ENABLE_SOCKS5_PROXY: "true"
+      BASE_URL: "http://localhost:20128"
+      HOSTNAME: "0.0.0.0"
+      PORT: "20128"
+      APP_LOG_TO_FILE: "true"
+      NO_PROXY: "host.docker.internal,localhost,127.0.0.1,172.17.0.0/16"
+      CLAUDE_ANTHROPIC_BASE_URL: "https://claude-code-cli.vibecode-claude.online"
+    secrets:
+      - claude_api_key
+      - codex_api_key
+    entrypoint: >
+      sh -c '
+        npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+        npm install -g @openai/codex >/dev/null 2>&1 || true
+        command -v codex >/dev/null 2>&1 || echo "[WARN] codex CLI not found after install" >&2
+        mkdir -p /opt/omniroute/codex-home
+
+        (
+          ANTHROPIC_API_KEY=$$(cat /run/secrets/claude_api_key)
+          ANTHROPIC_BASE_URL=$$CLAUDE_ANTHROPIC_BASE_URL
+          GATEWAY_PORT=20130
+          CLAUDE_BIN=$$(command -v claude || echo /usr/local/bin/claude)
+          DISABLE_TELEMETRY=1
+          DISABLE_ERROR_REPORTING=1
+          DISABLE_AUTOUPDATER=1
+          CLAUDE_GATEWAY_MODE=bridge
+          export ANTHROPIC_API_KEY ANTHROPIC_BASE_URL GATEWAY_PORT CLAUDE_BIN
+          export DISABLE_TELEMETRY DISABLE_ERROR_REPORTING DISABLE_AUTOUPDATER CLAUDE_GATEWAY_MODE
+          while true; do
+            node /app/claude-gateway.mjs || echo "[watchdog] claude-gateway exited, restart in 2s" >&2
+            sleep 2
+          done
+        ) &
+
+        (
+          API_KEY=$$(cat /run/secrets/codex_api_key)
+          # Optional: enable gateway authentication. Create /run/secrets/codex_gateway_secret
+          # (Docker secret or file mount) with a random token, then configure OmniRoute
+          # provider connection to send `Authorization: Bearer <token>` instead of API key.
+          GATEWAY_SECRET=$$(cat /run/secrets/codex_gateway_secret 2>/dev/null || true)
+          GATEWAY_PORT=20132
+          UPSTREAM_URL=https://codex.sale/v1
+          CODEX_GATEWAY_MODE=app-server
+          CODEX_BIN=$$(command -v codex || echo /usr/local/bin/codex)
+          CODEX_HOME=/opt/omniroute/codex-home
+          CODEX_CWD=/opt/omniroute/codex-home
+          export API_KEY GATEWAY_SECRET GATEWAY_PORT UPSTREAM_URL
+          export CODEX_GATEWAY_MODE CODEX_BIN CODEX_HOME CODEX_CWD
+          while true; do
+            node /app/codex-gateway.mjs || echo "[watchdog] codex-gateway exited, restart in 2s" >&2
+            sleep 2
+          done
+        ) &
+
+        exec /tmp/check-permissions.sh node dev/run-standalone.mjs
+      '
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18080:8080"
+
+secrets:
+  claude_api_key:
+    file: /etc/claude-secrets/api_key
+  codex_api_key:
+    file: /etc/codex-secrets/api_key

@@ -1,0 +1,14 @@
+node_modules/
+*.log
+.env
+.env.*
+*.backup.*
+.DS_Store
+ssh/
+backups/
+*.swp
+*.swo
+*~
+/tmp/
+/.deploy-*.log
+/.codex-key-*.log

@@ -1,0 +1,17 @@
+{
+  "name": "claude-gateway",
+  "version": "1.0.0",
+  "description": "claude-gateway + codex-gateway — OpenAI-compatible proxies with dynamic tool passthrough",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "3.2.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

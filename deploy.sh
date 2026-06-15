@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Deploy omnirouter-gw codex gateway — run on LOCAL machine
+set -euo pipefail
+
+KEY="$(dirname "$0")/ssh/id_ed25519_fra1vm5sy7"
+HOST="root@81.200.157.36"
+GW="$(dirname "$0")/scripts/claude-gateway"
+DIR="$(dirname "$0")"
+
+echo "=== 1. Tests ==="
+cd "$GW" && npm test
+echo ""
+
+echo "=== 2. Copy sources + compose ==="
+scp -i "$KEY" -o StrictHostKeyChecking=accept-new \
+    "$GW/server.js" \
+    "$GW/codex-gateway.mjs" \
+    "$GW/codex-sanitize.mjs" \
+    "$GW/codex-app-server-client.mjs" \
+    "$GW/openai-codex-bridge.mjs" \
+    "$GW/claude-bridge.mjs" \
+    "$GW/tool-mapping.mjs" \
+    "$HOST:/opt/claude-gateway/"
+scp -i "$KEY" "$DIR/config/docker-compose.yml" "$HOST:/opt/omniroute/docker-compose.yml"
+
+echo "=== 3. Restart container with new mounts ==="
+ssh -i "$KEY" "$HOST" 'mkdir -p /opt/omniroute/codex-home && cd /opt/omniroute && docker compose up -d omniroute'
+sleep 15
+
+echo "=== 4. Verify ==="
+ssh -i "$KEY" "$HOST" '
+echo "--- container ---"
+docker ps --filter name=omniroute --format "{{.Status}}"
+echo "--- codex bin ---"
+docker exec omniroute sh -c "codex --version 2>&1 || echo NOT_FOUND"
+echo "--- config.toml ---"
+docker exec omniroute cat /opt/omniroute/codex-home/.codex/config.toml 2>&1 || echo NOT_FOUND
+echo "--- gateway models ---"
+docker exec omniroute node -e "const h=require(\"http\");h.get(\"http://127.0.0.1:20132/v1/models\",r=>{let d=\"\";r.on(\"data\",c=>d+=c);r.on(\"end\",()=>console.log(d.slice(0,500)))});" 2>&1
+'
+
+echo "=== 5. Tool test ==="
+ssh -i "$KEY" "$HOST" '
+docker exec omniroute node -e "
+const h = require(\"http\");
+const body = JSON.stringify({model:\"gpt-5.5\",stream:true,messages:[{role:\"user\",content:\"Write file /tmp/x.txt with content hello\"}],tools:[{type:\"function\",function:{name:\"Write\",parameters:{type:\"object\",properties:{path:{type:\"string\"},contents:{type:\"string\"}},required:[\"path\",\"contents\"]}}}]});
+const r = h.request({hostname:\"127.0.0.1\",port:20132,path:\"/v1/chat/completions\",method:\"POST\",headers:{\"Content-Type\":\"application/json\",\"Content-Length\":Buffer.byteLength(body)}}, res => {
+  let out=\"\";
+  res.on(\"data\", c => {
+    const lines = c.toString().split(\"\\n\");
+    for (const l of lines) {
+      if (!l.startsWith(\"data:\") || l.includes(\"[DONE]\")) continue;
+      try { const j = JSON.parse(l.slice(5).trim()); const d = j.choices?.[0]?.delta; if (d?.content) out += d.content; if (d?.tool_calls) for (const tc of d.tool_calls) if (tc?.function?.name) out += \" TOOL:\"+tc.function.name+\" args:\"+(tc.function.arguments||\"\").slice(0,150); } catch {}
+    }
+  });
+  res.on(\"end\", () => { console.log(out.slice(0,600)); process.exit(0); });
+});
+r.on(\"error\", e => { console.log(\"ERR:\", e.message); process.exit(1); });
+r.setTimeout(90000, () => { console.log(\"TIMEOUT\"); process.exit(1); });
+r.write(body); r.end();
+" 2>&1
+'
+
+echo ""
+echo "=== DEPLOY COMPLETE ==="

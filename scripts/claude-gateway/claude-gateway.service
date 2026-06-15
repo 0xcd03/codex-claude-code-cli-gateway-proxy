@@ -1,0 +1,29 @@
+[Unit]
+Description=claude-gateway — Claude Code CLI proxy (OpenAI-compatible)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/claude-gateway
+
+# Secrets loaded from a protected file — never hardcode keys here
+EnvironmentFile=/etc/claude-gateway.env
+
+Environment=GATEWAY_PORT=20130
+Environment=CLAUDE_BIN=/usr/bin/claude
+Environment=DISABLE_TELEMETRY=1
+Environment=DISABLE_ERROR_REPORTING=1
+Environment=DISABLE_AUTOUPDATER=1
+Environment=CLAUDE_GATEWAY_MODE=bridge
+
+ExecStart=/usr/bin/node /opt/claude-gateway/server.js
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-gateway
+
+[Install]
+WantedBy=multi-user.target
