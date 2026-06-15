@@ -40,6 +40,8 @@ if (!ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 
+// Model IDs without prefix — OmniRoute adds the provider prefix at routing level.
+// E.g. 'claude-opus-4-8' becomes 'claude/claude-opus-4-8' to the client.
 const MODELS = [
   'claude-fable-5',
   'claude-opus-4-8',

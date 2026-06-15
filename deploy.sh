@@ -7,6 +7,29 @@ HOST="root@81.200.157.36"
 GW="$(dirname "$0")/scripts/claude-gateway"
 DIR="$(dirname "$0")"
 
+echo "=== 0. Migrate server paths (vbcdr → claude) ==="
+ssh -i "$KEY" "$HOST" '
+  # Secrets: vbcdr → claude
+  if [ -f /etc/vbcdr-secrets/api_key ] && [ ! -f /etc/claude-secrets/api_key ]; then
+    mkdir -p /etc/claude-secrets
+    cp /etc/vbcdr-secrets/api_key /etc/claude-secrets/api_key
+    chmod 600 /etc/claude-secrets/api_key
+    echo "migrated: /etc/claude-secrets/api_key"
+  elif [ -f /etc/claude-secrets/api_key ]; then
+    echo "already: /etc/claude-secrets/api_key"
+  else
+    echo "WARN: no claude API key found"
+  fi
+  # Gateway sources dir
+  if [ -d /opt/vbcdr-gateway ] && [ ! -d /opt/claude-gateway ]; then
+    cp -a /opt/vbcdr-gateway /opt/claude-gateway
+    echo "migrated: /opt/claude-gateway/"
+  elif [ -d /opt/claude-gateway ]; then
+    echo "already: /opt/claude-gateway/"
+  fi
+'
+echo ""
+
 echo "=== 1. Tests ==="
 cd "$GW" && npm test
 echo ""
