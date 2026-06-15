@@ -11,6 +11,8 @@ omnirouter-gw/
   config/docker-compose.yml      # compose для развёртывания
   scripts/claude-gateway/        # claude-gateway + codex-gateway (исходники)
   deploy.sh                      # скрипт деплоя
+  deploy.env.example             # шаблон конфига деплоя (скопировать в deploy.env)
+  deploy.env                     # локальный конфиг деплоя (в .gitignore)
 ```
 
 ---
@@ -41,23 +43,17 @@ omnirouter-gw/
 ssh $HOST 'cd /path/to/omniroute && docker compose restart omniroute'
 ```
 
-**Deploy gateway sources:**
+**Deploy (one-time setup):**
 ```bash
-GW=./scripts/claude-gateway
-HOST=root@your-server
-
-scp -i "$SSH_KEY" \
-  "$GW/server.js" \
-  "$GW/codex-gateway.mjs" \
-  "$GW/codex-sanitize.mjs" \
-  "$GW/codex-app-server-client.mjs" \
-  "$GW/openai-codex-bridge.mjs" \
-  "$GW/claude-bridge.mjs" \
-  "$GW/tool-mapping.mjs" \
-  "$HOST:/opt/claude-gateway/"
-scp -i "$SSH_KEY" config/docker-compose.yml "$HOST:/opt/omniroute/"
-ssh "$HOST" 'cd /opt/omniroute && docker compose restart omniroute'
+cp deploy.env.example deploy.env
+# Edit deploy.env — set GW_HOST and GW_SSH_KEY
 ```
+
+**Deploy (every time):**
+```bash
+bash deploy.sh
+```
+Script does: tests → scp → docker compose restart → smoke test.
 
 **Tests:**
 ```bash

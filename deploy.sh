@@ -1,22 +1,34 @@
 #!/usr/bin/env bash
 # Deploy omnirouter-gw gateway sources to server.
-# Set these env vars (or edit defaults below):
-#   GW_HOST=root@<server-ip>
-#   GW_SSH_KEY=/path/to/ssh/key
-#   GW_REMOTE_GATEWAY_DIR=/opt/claude-gateway
-#   GW_REMOTE_OMNIROUTE_DIR=/opt/omniroute
+# Configuration:
+#   1. Copy deploy.env.example → deploy.env
+#   2. Fill in GW_HOST and GW_SSH_KEY
+#   3. Run: bash deploy.sh
 set -euo pipefail
+
+DIR="$(dirname "$0")"
+
+# Auto-source deploy.env if present (not committed to git)
+if [ -f "$DIR/deploy.env" ]; then
+  set -a; source "$DIR/deploy.env"; set +a
+fi
 
 HOST="${GW_HOST:-}"
 KEY="${GW_SSH_KEY:-}"
 GATEWAY_DIR="${GW_REMOTE_GATEWAY_DIR:-/opt/claude-gateway}"
 OMNIROUTE_DIR="${GW_REMOTE_OMNIROUTE_DIR:-/opt/omniroute}"
-GW="$(dirname "$0")/scripts/claude-gateway"
-DIR="$(dirname "$0")"
+GW="$DIR/scripts/claude-gateway"
 
 if [ -z "$HOST" ] || [ -z "$KEY" ]; then
-  echo "ERROR: Set GW_HOST and GW_SSH_KEY environment variables." >&2
-  echo "       GW_HOST=root@your-server GW_SSH_KEY=/path/to/key bash deploy.sh" >&2
+  echo "ERROR: GW_HOST and GW_SSH_KEY are not set." >&2
+  echo "" >&2
+  echo "  Option 1: Create deploy.env from the template:" >&2
+  echo "    cp deploy.env.example deploy.env" >&2
+  echo "    # edit deploy.env with your server IP and SSH key path" >&2
+  echo "    bash deploy.sh" >&2
+  echo "" >&2
+  echo "  Option 2: Export env vars directly:" >&2
+  echo "    GW_HOST=root@your-server GW_SSH_KEY=/path/to/key bash deploy.sh" >&2
   exit 1
 fi
 

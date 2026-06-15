@@ -12,3 +12,6 @@ backups/
 /tmp/
 /.deploy-*.log
 /.codex-key-*.log
+
+# Local deploy config with real credentials
+deploy.env
