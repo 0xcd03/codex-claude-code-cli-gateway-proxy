@@ -1,13 +1,6 @@
-# OmniRouter Gateway (omnirouter-gw)
+# OmniRouter Gateway
 
-Локальный проект gateway для OmniRoute на сервере **fra-1-vm-5sy7**.
-
-**Server:** 81.200.157.36  
-**Hostname:** fra-1-vm-5sy7  
-**OS:** Ubuntu 24.04 LTS (6.8.0-110-generic)  
-**SSH key:** `/Users/dmitrij/cursor/omnirouter-gw/ssh/id_ed25519_fra1vm5sy7` (также `~/.ssh/id_ed25519_fra1vm5sy7`)
-
-**Корень проекта:** `/Users/dmitrij/cursor/omnirouter-gw/`
+Gateway-проект для OmniRoute: два OpenAI-совместимых прокси с dynamic tool passthrough.
 
 ---
 
@@ -15,63 +8,60 @@
 
 ```
 omnirouter-gw/
-  config/docker-compose.yml      # compose для /opt/omniroute на сервере
-  scripts/claude-gateway/      # claude-gateway + codex-gateway (исходники)
-  ssh/                         # ключ для деплоя
-  backups/                     # локальные бэкапы сервера
+  config/docker-compose.yml      # compose для развёртывания
+  scripts/claude-gateway/        # claude-gateway + codex-gateway (исходники)
+  deploy.sh                      # скрипт деплоя
 ```
 
 ---
 
-## Services
+## Gateways
 
-| Service | Port | Status | Notes |
-|---------|------|--------|-------|
-| OpenClaw | 127.0.0.1:18789 | ✅ systemd | v2026.6.1 |
-| OmniRoute | 20128 / 20129 | ✅ Docker | v3.8.23 |
-| claude-gateway | 127.0.0.1:20130 | ✅ inside omniroute | Claude Code CLI → vibecode |
-| codex-gateway | 127.0.0.1:20132 | ✅ inside omniroute | proxy → codex.sale (20131 = EmbedWsProxy) |
-| SearXNG | 127.0.0.1:18080 | ✅ Docker | |
+| Gateway | Port | Описание |
+|---------|------|----------|
+| codex-gateway | 20132 | Codex App Server bridge (`codex app-server --stdio → codex.sale`) с dynamicTools passthrough |
+| claude-gateway | 20130 | Claude CLI bridge (`stream-json` с tool_use passthrough) |
+
+Оба gateway запускаются как sidecar внутри контейнера OmniRoute (см. `config/docker-compose.yml`).
 
 ---
 
 ## Docker Compose
 
-**Локальная копия:** `config/docker-compose.yml`  
-**На сервере:** `/opt/omniroute/docker-compose.yml`
+**Файл:** `config/docker-compose.yml`
 
-**Auto-start sidecars (entrypoint, OmniRoute 3.8.23):**
-- `npm install -g @anthropic-ai/claude-code` (idempotent)
-- `claude-gateway` on 20130 (Claude Code CLI subprocess)
-- `codex-gateway` on 20132 (transparent proxy to codex.sale)
-- OmniRoute: `/tmp/check-permissions.sh node dev/run-standalone.mjs`
-- Container runs as `root` (secrets + `/root/.claude` mounts)
+**Auto-start sidecars (entrypoint):**
+- `npm install -g @anthropic-ai/claude-code`
+- `npm install -g @openai/codex`
+- `claude-gateway` на 20130 (Claude Code CLI subprocess)
+- `codex-gateway` на 20132 (прокси к codex.sale)
 
 **Restart:**
 ```bash
-ssh -i /Users/dmitrij/cursor/omnirouter-gw/ssh/id_ed25519_fra1vm5sy7 root@81.200.157.36 \
-  'cd /opt/omniroute && docker compose restart omniroute'
+ssh $HOST 'cd /path/to/omniroute && docker compose restart omniroute'
 ```
 
 **Deploy gateway sources:**
 ```bash
-GW=/Users/dmitrij/cursor/omnirouter-gw/scripts/claude-gateway
-KEY=/Users/dmitrij/cursor/omnirouter-gw/ssh/id_ed25519_fra1vm5sy7
-HOST=root@81.200.157.36
+GW=./scripts/claude-gateway
+HOST=root@your-server
 
-scp -i "$KEY" \
+scp -i "$SSH_KEY" \
   "$GW/server.js" \
   "$GW/codex-gateway.mjs" \
   "$GW/codex-sanitize.mjs" \
   "$GW/codex-app-server-client.mjs" \
   "$GW/openai-codex-bridge.mjs" \
+  "$GW/claude-bridge.mjs" \
+  "$GW/tool-mapping.mjs" \
   "$HOST:/opt/claude-gateway/"
-ssh -i "$KEY" "$HOST" 'mkdir -p /opt/omniroute/codex-home && cd /opt/omniroute && docker compose restart omniroute'
+scp -i "$SSH_KEY" config/docker-compose.yml "$HOST:/opt/omniroute/"
+ssh "$HOST" 'cd /opt/omniroute && docker compose restart omniroute'
 ```
 
-**Tests (локально):**
+**Tests:**
 ```bash
-cd /Users/dmitrij/cursor/omnirouter-gw/scripts/claude-gateway && npm test
+cd scripts/claude-gateway && npm test
 ```
 
 ---
@@ -80,31 +70,22 @@ cd /Users/dmitrij/cursor/omnirouter-gw/scripts/claude-gateway && npm test
 
 **Prefix:** `cdslgw`
 
-**Models:**
 ```
-cdslgw/gpt-5.4
-cdslgw/gpt-5.4-mini
-cdslgw/gpt-5.5
-cdslgw/gpt-image-2
-cdslgw/gpt-4o-transcribe
+Cursor → OmniRoute → codex-gateway → codex app-server --stdio → codex.sale
+                                    ↑ dynamicTools passthrough
+                                    (tools execute in Cursor, NOT on server)
 ```
 
-**Cursor settings:**
-- API Base URL: `http://81.200.157.36:20129/v1`
-- Model: `cdslgw/gpt-5.5`
-
-**Gateway:** Codex CLI App Server bridge (default) or direct HTTP proxy.
-
-**Codex CLI config** (как в install-скрипте codex.sale):
+**Codex CLI config:**
 - Provider: `https://codex.sale/backend-api/codex` (`wire_api = responses`)
-- Ключ: `CODEX_LB_API_KEY` из Docker secret `/etc/codex-secrets/api_key`
-- Файлы: `$CODEX_HOME/.codex/auth.json` + `config.toml` (пишутся при старте gateway)
+- Ключ: `CODEX_LB_API_KEY` из Docker secret
+- Файлы: `$CODEX_HOME/.codex/auth.json` + `config.toml` (авто-генерация при старте)
 
 **Modes** (`CODEX_GATEWAY_MODE`):
-- `app-server` — `Cursor → codex-gateway → codex app-server --stdio → codex.sale` with `dynamicTools` passthrough (tools execute in Cursor, not on server)
-- `http` — direct OpenAI-compatible proxy with hollow-response retry + sanitization
+- `app-server` — App Server bridge с dynamicTools (default)
+- `http` — прямой HTTP proxy с hollow-response retry
 
-Runs inside omniroute container on **20132**. Requires `@openai/codex` CLI (installed in entrypoint).
+**Требования:** `@openai/codex` CLI (устанавливается в entrypoint).
 
 ---
 
@@ -112,33 +93,34 @@ Runs inside omniroute container on **20132**. Requires `@openai/codex` CLI (inst
 
 **Prefix:** `claude`
 
-**Models:**
 ```
-claude/claude-opus-4-8
-claude/claude-opus-4-7
-claude/claude-opus-4-6
-claude/claude-opus-4-5
-claude/claude-sonnet-4-6
-claude/claude-sonnet-4-5
-claude/claude-haiku-4-5
+Cursor → OmniRoute → claude-gateway → claude -p --output-format stream-json → vibecode
+                                    ↑ tool_use passthrough
+                                    (tools execute in Cursor, NOT on server)
 ```
 
-**Gateway:** runs inside container on 20130, uses `claude -p` subprocess.
+**Tool mapping** (Claude → Cursor):
+| Claude | Cursor |
+|--------|--------|
+| Write | Write |
+| Bash | Shell |
+| Read | Read |
+| Edit | StrReplace |
+| Glob | Glob |
+| Grep | Grep |
+
+**Modes** (`CLAUDE_GATEWAY_MODE`):
+- `bridge` — stream-json с tool_use passthrough (default)
+- `legacy` — plain `claude -p` text-only
+
+**Требования:** `@anthropic-ai/claude-code` CLI (устанавливается в entrypoint).
 
 ---
 
-## Notes
-
-- Device fingerprint for Claude CLI is persisted in `/opt/omniroute/claude-home`.
-- Codex API key stored in Docker secret `/etc/codex-secrets/api_key` (env: `CODEX_LB_API_KEY`).
-- Codex CLI version: 0.139.0 (installed in entrypoint).
-- **Все изменения gateway — только в `omnirouter-gw/scripts/claude-gateway/`.**
-- После правок: `bash deploy.sh` (автоматически делает tests → scp → restart → smoke).
-
 ## Verified (2026-06-15)
 
-- [x] `codex app-server --stdio` инициализируется с codex.sale backend
-- [x] Chat completion (text) через app-server bridge: `"Hi"`
+- [x] `codex app-server --stdio` работает с codex.sale backend
 - [x] Tool call (Write) через dynamicTools: `Write {"path":"/tmp/hello.txt","contents":"world\n"}`
-- [x] 77/77 unit tests passing
-- [x] HTTP fallback mode работает (hollow retry + sanitization)
+- [x] Claude stream-json tool_use: Write, Bash, Read, Edit, Glob
+- [x] 88/88 unit tests passing
+- [x] HTTP fallback mode (hollow retry + sanitization)

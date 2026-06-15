@@ -1,15 +1,30 @@
 #!/usr/bin/env bash
-# Deploy omnirouter-gw codex gateway — run on LOCAL machine
+# Deploy omnirouter-gw gateway sources to server.
+# Set these env vars (or edit defaults below):
+#   GW_HOST=root@<server-ip>
+#   GW_SSH_KEY=/path/to/ssh/key
+#   GW_REMOTE_GATEWAY_DIR=/opt/claude-gateway
+#   GW_REMOTE_OMNIROUTE_DIR=/opt/omniroute
 set -euo pipefail
 
-KEY="$(dirname "$0")/ssh/id_ed25519_fra1vm5sy7"
-HOST="root@81.200.157.36"
+HOST="${GW_HOST:-}"
+KEY="${GW_SSH_KEY:-}"
+GATEWAY_DIR="${GW_REMOTE_GATEWAY_DIR:-/opt/claude-gateway}"
+OMNIROUTE_DIR="${GW_REMOTE_OMNIROUTE_DIR:-/opt/omniroute}"
 GW="$(dirname "$0")/scripts/claude-gateway"
 DIR="$(dirname "$0")"
 
+if [ -z "$HOST" ] || [ -z "$KEY" ]; then
+  echo "ERROR: Set GW_HOST and GW_SSH_KEY environment variables." >&2
+  echo "       GW_HOST=root@your-server GW_SSH_KEY=/path/to/key bash deploy.sh" >&2
+  exit 1
+fi
+
+SSH="ssh -i $KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
+SCP="scp -i $KEY -o StrictHostKeyChecking=accept-new"
+
 echo "=== 0. Migrate server paths (vbcdr → claude) ==="
-ssh -i "$KEY" "$HOST" '
-  # Secrets: vbcdr → claude
+$SSH "$HOST" '
   if [ -f /etc/vbcdr-secrets/api_key ] && [ ! -f /etc/claude-secrets/api_key ]; then
     mkdir -p /etc/claude-secrets
     cp /etc/vbcdr-secrets/api_key /etc/claude-secrets/api_key
@@ -20,12 +35,11 @@ ssh -i "$KEY" "$HOST" '
   else
     echo "WARN: no claude API key found"
   fi
-  # Gateway sources dir
-  if [ -d /opt/vbcdr-gateway ] && [ ! -d /opt/claude-gateway ]; then
-    cp -a /opt/vbcdr-gateway /opt/claude-gateway
-    echo "migrated: /opt/claude-gateway/"
-  elif [ -d /opt/claude-gateway ]; then
-    echo "already: /opt/claude-gateway/"
+  if [ -d /opt/vbcdr-gateway ] && [ ! -d '"$GATEWAY_DIR"' ]; then
+    cp -a /opt/vbcdr-gateway '"$GATEWAY_DIR"'
+    echo "migrated: $GATEWAY_DIR/"
+  elif [ -d '"$GATEWAY_DIR"' ]; then
+    echo "already: $GATEWAY_DIR/"
   fi
 '
 echo ""
@@ -35,7 +49,7 @@ cd "$GW" && npm test
 echo ""
 
 echo "=== 2. Copy sources + compose ==="
-scp -i "$KEY" -o StrictHostKeyChecking=accept-new \
+$SCP \
     "$GW/server.js" \
     "$GW/codex-gateway.mjs" \
     "$GW/codex-sanitize.mjs" \
@@ -43,27 +57,27 @@ scp -i "$KEY" -o StrictHostKeyChecking=accept-new \
     "$GW/openai-codex-bridge.mjs" \
     "$GW/claude-bridge.mjs" \
     "$GW/tool-mapping.mjs" \
-    "$HOST:/opt/claude-gateway/"
-scp -i "$KEY" "$DIR/config/docker-compose.yml" "$HOST:/opt/omniroute/docker-compose.yml"
+    "$HOST:$GATEWAY_DIR/"
+$SCP "$DIR/config/docker-compose.yml" "$HOST:$OMNIROUTE_DIR/docker-compose.yml"
 
-echo "=== 3. Restart container with new mounts ==="
-ssh -i "$KEY" "$HOST" 'mkdir -p /opt/omniroute/codex-home && cd /opt/omniroute && docker compose up -d omniroute'
+echo "=== 3. Restart container ==="
+$SSH "$HOST" "mkdir -p $OMNIROUTE_DIR/codex-home && cd $OMNIROUTE_DIR && docker compose up -d omniroute"
 sleep 15
 
 echo "=== 4. Verify ==="
-ssh -i "$KEY" "$HOST" '
+$SSH "$HOST" '
 echo "--- container ---"
 docker ps --filter name=omniroute --format "{{.Status}}"
 echo "--- codex bin ---"
 docker exec omniroute sh -c "codex --version 2>&1 || echo NOT_FOUND"
 echo "--- config.toml ---"
-docker exec omniroute cat /opt/omniroute/codex-home/.codex/config.toml 2>&1 || echo NOT_FOUND
+docker exec omniroute cat '"$OMNIROUTE_DIR"'/codex-home/.codex/config.toml 2>&1 || echo NOT_FOUND
 echo "--- gateway models ---"
 docker exec omniroute node -e "const h=require(\"http\");h.get(\"http://127.0.0.1:20132/v1/models\",r=>{let d=\"\";r.on(\"data\",c=>d+=c);r.on(\"end\",()=>console.log(d.slice(0,500)))});" 2>&1
 '
 
 echo "=== 5. Tool test ==="
-ssh -i "$KEY" "$HOST" '
+$SSH "$HOST" '
 docker exec omniroute node -e "
 const h = require(\"http\");
 const body = JSON.stringify({model:\"gpt-5.5\",stream:true,messages:[{role:\"user\",content:\"Write file /tmp/x.txt with content hello\"}],tools:[{type:\"function\",function:{name:\"Write\",parameters:{type:\"object\",properties:{path:{type:\"string\"},contents:{type:\"string\"}},required:[\"path\",\"contents\"]}}}]});
