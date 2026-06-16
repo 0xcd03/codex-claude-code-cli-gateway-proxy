@@ -59,7 +59,7 @@ async function main() {
   const connRes = await api('POST', '/api/providers', {
     provider: nodeId,
     name: 'codexsale',
-    apiKey: process.env.CODEX_API_KEY || '<your-codex-sale-api-key>',
+    apiKey: process.env.CODEX_API_KEY || 'sk-clb-kyEhsquRHv9y6O7vpIkRdCApCf4xr-o4d8E_ZK35O6Q',
     providerSpecificData: { prefix: 'cdslgw', nodeName: 'Codex Sale Gateway' },
   });
   const connId = connRes.body?.connection?.id;

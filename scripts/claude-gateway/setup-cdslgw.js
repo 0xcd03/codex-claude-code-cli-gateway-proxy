@@ -11,7 +11,7 @@ const NODE_ID = process.argv[2];
 if (!NODE_ID) { console.error('Usage: node setup-cdslgw.js <NODE_ID>'); process.exit(1); }
 
 const http = require('http');
-const KEY = process.env.CODEX_API_KEY || '<your-codex-sale-api-key>';
+const KEY = process.env.CODEX_API_KEY || 'sk-clb-kyEhsquRHv9y6O7vpIkRdCApCf4xr-o4d8E_ZK35O6Q';
 const MODELS = ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.5', 'gpt-image-2', 'gpt-4o-transcribe'];
 const PREFIX = 'cdslgw';
 
@@ -65,7 +65,7 @@ async function setup(nodeId) {
   console.log('4. E2E test...');
   const testRes = await new Promise(resolve => {
     const r = http.request({ hostname: '127.0.0.1', port: 20129, path: '/v1/chat/completions', method: 'POST',
-      headers: { 'Authorization': `Bearer ${process.env.OMNIROUTE_API_KEY || '<your-omniroute-api-key>'}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${process.env.OMNIROUTE_API_KEY || 'sk-f4df583d7637d6b1-7332eb-aeebc0a5'}`, 'Content-Type': 'application/json' },
     }, res => { let b=''; res.on('data',d=>b+=d); res.on('end',()=>{ try{resolve(JSON.parse(b));}catch{resolve(b);} }); });
     r.write(JSON.stringify({ model: PREFIX+'/gpt-5.4', max_tokens: 20, messages: [{role:'user',content:'Reply only: CODEX_OK'}] }));
     r.end();
