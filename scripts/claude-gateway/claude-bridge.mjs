@@ -147,8 +147,9 @@ export class ClaudeToolBridge {
 
     this.onLog(`claude turn: ${messages.length} msgs, prompt≈${Math.round(prompt.length / 1024)}KB, allowedTools=${allowed}`);
 
-    const args = [
-      '-p', prompt,
+    // Pipe prompt via stdin to avoid E2BIG on large contexts (>128KB argv limit).
+    // Uses `sh -c 'claude ... -p "$(cat)"'` — stdin → cat substitution bypasses argv.
+    const argList = [
       '--model', model,
       '--output-format', 'stream-json',
       '--include-partial-messages',
@@ -158,7 +159,16 @@ export class ClaudeToolBridge {
       '--append-system-prompt', this.appendSystemPrompt,
     ];
 
-    const proc = spawn(this.bin, args, { env: this.buildEnv() });
+    const proc = spawn('sh', [
+      '-c',
+      `${this.bin} ${argList.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ')} -p "$(cat)"`,
+    ], {
+      env: this.buildEnv(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    // Pipe prompt through stdin → sh → cat → claude -p "$(cat)"
+    proc.stdin.write(prompt);
+    proc.stdin.end();
 
     return new Promise((resolve, reject) => {
       let buffer       = '';

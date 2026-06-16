@@ -107,6 +107,6 @@ services:
 
 secrets:
   claude_api_key:
-    file: /etc/claude-secrets/api_key
+    file: /etc/vbcdr-secrets/api_key
   codex_api_key:
     file: /etc/codex-secrets/api_key
